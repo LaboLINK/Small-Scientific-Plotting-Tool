@@ -11,7 +11,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageTk
-import tkinter as tk
 from Plotting_Tool_Config import create_config_window
 
 global start_interval_entry, end_interval_entry
@@ -80,7 +79,11 @@ def reset_settings():
     y_axis_entry.delete(0, tk.END)
     y_sec_axis_entry.delete(0, tk.END)
     # Aktualisieren Sie weitere Elemente nach Bedarf
-    
+    for item in tree.get_children():
+        tree.delete(item)
+    legend_position = 'best'  # Reset der Legendenposition
+    # Weitere Resets, falls erforderlich
+
 def show_info():
     # Erstellen eines neuen Toplevel-Fensters
     info_window = tk.Toplevel(root)
@@ -115,24 +118,29 @@ def open_database():
     print("Database-Funktion ausgelöst")
 
 def open_config():
-    create_config_window(root, update_config)
+    create_config_window(root, update_diagram_size, update_font_size, update_legend_position)
 
 def update_diagram_size(width, height):
     global DIAGRAM_WIDTH, DIAGRAM_HEIGHT
-    # ... Logik zur Aktualisierung der Diagrammgrößen ...
+    DIAGRAM_WIDTH = width / 80
+    DIAGRAM_HEIGHT = height / 80
+    print(f"Diagrammgröße aktualisiert auf: {DIAGRAM_WIDTH}x{DIAGRAM_HEIGHT} Zoll")
 
 def update_font_size(axis_font, title_font):
     global axis_font_size, title_font_size
-    # ... Logik zur Aktualisierung der Schriftgrößen ...
-
-def open_config():
-
-    create_config_window(root, update_diagram_size, update_font_size, update_legend_position)
+    axis_font_size = axis_font
+    title_font_size = title_font
+    print(f"Schriftgrößen aktualisiert: Achsen - {axis_font_size}, Titel - {title_font_size}")
 
 def update_legend_position(position):
     global legend_position
-    legend_position = position
-    
+    if position:
+        legend_position = position
+        print(f"Legendenposition aktualisiert auf: {legend_position}")
+    else:
+        legend_position = 'best'
+        print("Legendenposition auf 'best' zurückgesetzt")
+
 def load_excel_file():
     global df, table_ranges  # Wir verwenden table_ranges statt table_starts
     file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
@@ -143,6 +151,8 @@ def load_excel_file():
         update_treeview()
 
 def find_table_ranges():
+    global table_ranges
+    table_ranges = []
     is_first_column = True
     start = 0
     for i, column in enumerate(df.columns):
@@ -174,16 +184,16 @@ def update_treeview():
             skip_column = True
         else:
             if is_first_column:
-                table_starts.append(i)
+                # table_starts.append(i)  # Diese Variable wird nicht verwendet
                 is_first_column = False
             if skip_column:
                 skip_column = False
                 continue
-            tree.insert('', 'end', values=(index, column, '[Choose Color]', ''))
+            tree.insert('', 'end', values=(index, column, '[Choose Color]', '', '-'))
             index += 1
 
 def plot_data():
-    global title_font_size
+    global title_font_size, legend_position  # Globale Variablen verwenden
     selected_items = tree.selection()
     if selected_items and df is not None:
         fig, ax1 = plt.subplots(figsize=(DIAGRAM_WIDTH, DIAGRAM_HEIGHT))
@@ -206,102 +216,52 @@ def plot_data():
                 line_style = '-'  # Standard-Linienstil
 
             for start, end in table_ranges:
-                if df.columns.get_loc(column) >= start and df.columns.get_loc(column) <= end:
+                if start <= df.columns.get_loc(column) <= end:
                     x_column = df.columns[start]
                     if 'S' in axis_choice:
                         ax = ax2 if use_secondary_axis else ax1
                     else:
                         ax = ax1
-                    ax.plot(df[x_column], df[column], label=column, color=color, linestyle=line_style)  # Linienstil anwenden
+
+                    # Daten filtern, um NaN-Werte zu entfernen
+                    valid_data = df[[x_column, column]].dropna()
+
+                    # Nur für Linien die Legende setzen (label=column)
+                    ax.plot(valid_data[x_column], valid_data[column], label=column, color=color, linestyle=line_style)
+
+                    # Datenpunkte nur plotten, aber nicht in die Legende aufnehmen
                     if 'X' in axis_choice:
-                        ax.scatter(df[x_column], df[column], color=color, marker='x')
+                        ax.scatter(valid_data[x_column], valid_data[column], color=color, marker='x')
+
                     break
 
- # Überprüfen, ob das title_entry Widget existiert und nicht leer ist
+        # Überprüfen, ob das title_entry Widget existiert und nicht leer ist
         if title_entry.winfo_exists():
             title = title_entry.get()
             if title:  # Wenn ein Titel vorhanden ist, verwenden Sie diesen
                 plt.title(title, fontsize=title_font_size)
-        # Legenden und Achsenbeschriftungen
-        
-    ax1.set_xlabel(x_axis_entry.get(), fontsize=axis_font_size)
-    ax1.set_ylabel(y_axis_entry.get(), fontsize=axis_font_size)
-    if use_secondary_axis:
-        ax2.set_ylabel(y_sec_axis_entry.get(), fontsize=axis_font_size)
-    plt.title(title_entry.get(), fontsize=title_font_size)
 
-    # Legenden (mit Überprüfung auf 'none')
-    if legend_position != 'none':
-        lines, labels = ax1.get_legend_handles_labels()
+        # Achsenbeschriftungen
+        ax1.set_xlabel(x_axis_entry.get(), fontsize=axis_font_size)
+        ax1.set_ylabel(y_axis_entry.get(), fontsize=axis_font_size)
         if use_secondary_axis:
-            lines2, labels2 = ax2.get_legend_handles_labels()
-            ax1.legend(lines + lines2, labels + labels2, loc=legend_position)
-        else:
-            ax1.legend(lines, labels, loc=legend_position)
+            ax2.set_ylabel(y_sec_axis_entry.get(), fontsize=axis_font_size)
 
-    plt.show()
+        # Legenden (mit Überprüfung auf 'none')
+        if legend_position.lower() != 'none':
+            if use_secondary_axis:
+                lines1, labels1 = ax1.get_legend_handles_labels()
+                lines2, labels2 = ax2.get_legend_handles_labels()
+                ax1.legend(lines1 + lines2, labels1 + labels2, loc=legend_position)
+            else:
+                lines, labels = ax1.get_legend_handles_labels()
+                ax1.legend(lines, labels, loc=legend_position)
 
-def plot_data_interval():
-    global df
-    selected_items = tree.selection()
-    if selected_items and df is not None:
-        # Konvertiere Start- und Endintervall in Indizes
-        try:
-            start_value = float(start_interval_entry.get())
-            end_value = float(end_interval_entry.get())
-        except ValueError:
-            print("Bitte gültige Zahlen für das Intervall eingeben")
-            return
+        if AUTO_ADJUST_LABELS:
+            plt.tight_layout()
 
-        # Finde die nächstgelegenen Indizes für Start- und Endwerte
-        x_column = df.columns[table_ranges[0][0]]  # Annahme: x-Werte sind in der ersten Spalte jeder Tabelle
-        start_idx = find_nearest_index(df[x_column], start_value)
-        end_idx = find_nearest_index(df[x_column], end_value)
+        plt.show()
 
-        # Überprüfen, ob das Intervall gültig ist
-        if start_idx >= end_idx:
-            print("Ungültiges Intervall: Start muss kleiner als Ende sein")
-            return
-
-        # Filtern der Daten nach dem angegebenen Intervall
-        df_interval = df.iloc[start_idx:end_idx + 1]
-
-        fig, ax1 = plt.subplots(figsize=(DIAGRAM_WIDTH, DIAGRAM_HEIGHT))
-
-        use_secondary_axis = any(tree.item(item)['values'][3] == 'S' for item in selected_items)
-
-        if use_secondary_axis:
-            ax2 = ax1.twinx()
-
-        for item in selected_items:
-            column = tree.item(item)['values'][1]
-            axis_choice = tree.item(item)['values'][3]
-            color = tree.item(item)['values'][2]
-
-            for start, end in table_ranges:
-                if df.columns.get_loc(column) >= start and df.columns.get_loc(column) <= end:
-                    if axis_choice == 'S' and use_secondary_axis:
-                        ax2.plot(df_interval[x_column], df_interval[column], label=column, color=color)
-                    else:
-                        ax1.plot(df_interval[x_column], df_interval[column], label=column, color=color)
-                    break
-
-    ax1.set_xlabel(x_axis_entry.get(), fontsize=axis_font_size)
-    ax1.set_ylabel(y_axis_entry.get(), fontsize=axis_font_size)
-    if use_secondary_axis:
-        ax2.set_ylabel(y_sec_axis_entry.get(), fontsize=axis_font_size)
-    plt.title(title_entry.get(), fontsize=title_font_size)
-
-    # Legenden (mit Überprüfung auf 'none')
-    if legend_position != 'none':
-        lines, labels = ax1.get_legend_handles_labels()
-        if use_secondary_axis:
-            lines2, labels2 = ax2.get_legend_handles_labels()
-            ax1.legend(lines + lines2, labels + labels2, loc=legend_position)
-        else:
-            ax1.legend(lines, labels, loc=legend_position)
-
-    plt.show()
 
 def find_nearest_index(array, value):
     """
@@ -322,12 +282,12 @@ def set_color():
     if selected_item and color:
         color_style = create_color_style(color)
         for item in selected_item:
-            tree.item(item, values=(tree.item(item)['values'][0], tree.item(item)['values'][1], color, tree.item(item)['values'][3]))
+            tree.item(item, values=(tree.item(item)['values'][0], tree.item(item)['values'][1], color, tree.item(item)['values'][3], tree.item(item)['values'][4]))
             tree.tag_configure(color, foreground=color)
             tree.tag_bind(color, '<1>', lambda e: print(e.widget.item(e.widget.selection())))
             tree.set(item, column='Set Color', value=color)
             tree.item(item, tags=(color,))
-            
+
 def set_dashed_lines():
     selected_items = tree.selection()
     for item in selected_items:
@@ -344,7 +304,7 @@ def select_sec_y():
     selected_items = tree.selection()
     for item in selected_items:
         tree.set(item, column='Select Axis', value='S')  # Setzt 'S' für die sekundäre Y-Achse
-        
+
 def update_plot_interval():
     global start_interval, end_interval
     try:
@@ -359,44 +319,34 @@ def open_advanced_window():
     global start_interval_entry, end_interval_entry
     advanced_window = tk.Toplevel()
     advanced_window.title("Advanced Options")
-    advanced_window.geometry("200x200")
+    advanced_window.geometry("300x250")  # Angepasste Größe
 
-    # Frame für den Statistics-Button mit linksbündiger Ausrichtung
-    stats_button_frame = tk.Frame(advanced_window)
-    stats_button_frame.pack(anchor='w')
+    # Frame für die Buttons
+    stats_button = tk.Button(advanced_window, text="Statistics", command=show_statistics, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
+    stats_button.pack(pady=5)
 
-    # Button für Statistiken
-    stats_button = tk.Button(stats_button_frame, text="Statistics", command=show_statistics, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
-    stats_button.pack(side=tk.LEFT, anchor='w')
+    column_plot_button = tk.Button(advanced_window, text="Column Plot", command=open_label_dialog, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
+    column_plot_button.pack(pady=5)
 
-    # Button für Column Plot
-    column_plot_button = tk.Button(stats_button_frame, text="Column Plot", command=open_label_dialog, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
-    column_plot_button.pack(side=tk.LEFT, anchor='w')
+    max_button = tk.Button(advanced_window, text="MAX", command=show_max_values, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
+    max_button.pack(pady=5)
 
-    # Frame für die MAX- und MIN-Buttons
-    max_min_button_frame = tk.Frame(advanced_window)
-    max_min_button_frame.pack(anchor='w')
-    
-    # Button für MAX-Wert
-    max_button = tk.Button(max_min_button_frame, text="MAX", command=show_max_values, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
-    max_button.pack(side=tk.LEFT, anchor='w')
-
-    # Button für MIN-Wert
-    min_button = tk.Button(max_min_button_frame, text="MIN", command=show_min_values, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
-    min_button.pack(side=tk.LEFT, anchor='w')
+    min_button = tk.Button(advanced_window, text="MIN", command=show_min_values, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
+    min_button.pack(pady=5)
 
     # Frame für die Intervalleingabe
     interval_frame = tk.Frame(advanced_window)
-    interval_frame.pack(anchor='w')
+    interval_frame.pack(pady=10)
 
     # Eingabefelder und Set-Button für das Intervall
+    Label(interval_frame, text="Start:").pack(side=tk.LEFT, padx=5)
     start_interval_entry = tk.Entry(interval_frame, width=5)
+    start_interval_entry.pack(side=tk.LEFT, padx=5)
+    Label(interval_frame, text="End:").pack(side=tk.LEFT, padx=5)
     end_interval_entry = tk.Entry(interval_frame, width=5)
-    start_interval_entry.pack(side=tk.LEFT, anchor='w')
-    tk.Label(interval_frame, text="-").pack(side=tk.LEFT, anchor='w')
-    end_interval_entry.pack(side=tk.LEFT, anchor='w')
-    set_button = tk.Button(interval_frame, text="Set Interval", command=plot_data_interval)
-    set_button.pack(side=tk.LEFT, anchor='w')
+    end_interval_entry.pack(side=tk.LEFT, padx=5)
+    set_button = tk.Button(advanced_window, text="Set Interval", command=update_plot_interval)
+    set_button.pack(pady=5)
 
 def show_statistics():
     selected_items = tree.selection()
@@ -424,10 +374,10 @@ def show_statistics():
             mean_val = df[column].mean()
             std_val = df[column].std()
             var_val = df[column].var()
-            stats_tree.insert('', 'end', values=(column, mean_val, std_val, var_val))
+            stats_tree.insert('', 'end', values=(column, f"{mean_val:.2f}", f"{std_val:.2f}", f"{var_val:.2f}"))
 
         stats_tree.pack(expand=True, fill='both')
-        
+
 def show_max_values():
     show_extreme_values("Max")
 
@@ -458,7 +408,7 @@ def show_extreme_values(extreme_type):
             column = tree.item(item)['values'][1]
             # Finde die korrespondierende Zeitachse für die ausgewählte Spalte
             for start, end in table_ranges:
-                if df.columns.get_loc(column) >= start and df.columns.get_loc(column) <= end:
+                if start <= df.columns.get_loc(column) <= end:
                     x_column = df.columns[start]
                     if extreme_type == "Max":
                         extreme_value = df[column].max()
@@ -467,11 +417,10 @@ def show_extreme_values(extreme_type):
                         extreme_value = df[column].min()
                         x_value = df[x_column][df[column].idxmin()]
 
-                    extreme_tree.insert('', 'end', values=(column, extreme_value, x_value))
+                    extreme_tree.insert('', 'end', values=(column, f"{extreme_value:.2f}", f"{x_value:.2f}"))
                     break
 
         extreme_tree.pack(expand=True, fill='both')
-
 
 def open_label_dialog():
     global is_dialog_open
@@ -480,7 +429,7 @@ def open_label_dialog():
 
     dialog = Toplevel()
     dialog.title("Add Labels")
-    dialog.geometry("300x150")
+    dialog.geometry("300x200")
 
     Label(dialog, text="Do you need chart labels?").pack(pady=10)
 
@@ -497,7 +446,7 @@ def open_label_dialog():
         Label(dialog, text="Chart Title:").pack()
         title_entry.pack()
 
-        Button(dialog, text="Plot", command=lambda: plot_and_close(dialog, True)).pack()
+        Button(dialog, text="Plot", command=lambda: plot_and_close(dialog, True)).pack(pady=10)
 
     def on_no():
         plot_and_close(dialog, False)
@@ -516,8 +465,6 @@ def plot_and_close(dialog, use_labels):
         title = None
     dialog.destroy()
     plot_column_data_statistics(y_label, title)
-    
-    selected_column_names = []
 
 def plot_column_data_statistics(y_label, title):
     global legend_position, SHOW_BAR_VALUES
@@ -597,18 +544,18 @@ def plot_column_data_statistics(y_label, title):
 
         plt.show()
 
-        
-        
 root = tk.Tk()
 root.title("Scientific Data Plotting Tool")
 
-
 # Laden Sie Ihr eigenes Icon
-icon_path = r"C:\Users\OoUbu\OneDrive\Dokumente\VS_CODE\AddONs\htdocs\img\Lab.ico"
-root.iconbitmap(icon_path)
+icon_path = r"C:\Users\OoUbu\OneDrive\Bilder\Lab.ico"
+try:
+    root.iconbitmap(icon_path)
+except Exception as e:
+    print(f"Fehler beim Laden des Icons: {e}")
 
 df = None
-table_starts = []
+table_ranges = []
 
 tree_frame = tk.Frame(root)
 tree_frame.pack(fill=tk.BOTH, expand=True)
@@ -625,19 +572,11 @@ tree.heading('Set Color', text='Set Color')
 tree.heading('Select Axis', text='Select Axis')
 tree.heading('Line Style', text='Line Style')
 # Konfigurieren Sie die Breite und Ausrichtung für jede Spalte
-tree.column('Index', width=50)
-tree.column('Column Name', width=150)
-tree.column('Set Color', width=120)
-tree.column('Line Style', width=60)
-tree.column('Select Axis', width=60)  # Spaltenbreite angepasst
-
-# Spalte 'Column Name' linksbündig ausrichten
-tree.column('Column Name', anchor='w')  
-
-# Die restlichen Spalten mittig ausrichten
-tree.column('Index', anchor='center')
-tree.column('Set Color', anchor='center')
-tree.column('Select Axis', anchor='center')
+tree.column('Index', width=50, anchor='center')
+tree.column('Column Name', width=150, anchor='w')
+tree.column('Set Color', width=120, anchor='center')
+tree.column('Select Axis', width=100, anchor='center')
+tree.column('Line Style', width=100, anchor='center')  # Angepasste Breite
 
 tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -647,27 +586,27 @@ BUTTON_HEIGHT = 1  # Höhe in Zeilen
 
 # Erstellen Sie ein Frame für die Buttons
 button_frame = tk.Frame(root)
-button_frame.pack()
+button_frame.pack(pady=10)
 
 # Button für das Umschalten der Datenpunkte-Anzeige
 data_points_button = tk.Button(button_frame, text="Data Points", command=toggle_data_points, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
-data_points_button.pack(side=tk.LEFT)
+data_points_button.pack(side=tk.LEFT, padx=5)
 
 # Verschieben Sie die Buttons in das neue Frame und ordnen Sie sie nebeneinander an
 color_button = tk.Button(button_frame, text="Set Color", command=set_color, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
-color_button.pack(side=tk.LEFT)
+color_button.pack(side=tk.LEFT, padx=5)
 
 dashed_line_button = tk.Button(button_frame, text="Dashed Lines", command=set_dashed_lines, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
-dashed_line_button.pack(side=tk.LEFT)
+dashed_line_button.pack(side=tk.LEFT, padx=5)
 
 pri_y_button = tk.Button(button_frame, text="Primary Axis", command=select_pri_y, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
-pri_y_button.pack(side=tk.LEFT)
+pri_y_button.pack(side=tk.LEFT, padx=5)
 
 sec_y_button = tk.Button(button_frame, text="Secondary Axis", command=select_sec_y, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
-sec_y_button.pack(side=tk.LEFT)
+sec_y_button.pack(side=tk.LEFT, padx=5)
 
 advanced_button = tk.Button(button_frame, text="Advanced", command=open_advanced_window, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
-advanced_button.pack(side=tk.LEFT)
+advanced_button.pack(side=tk.LEFT, padx=5)
 
 entry_width = 70  # Definieren Sie die Breite der Eingabefelder
 
@@ -697,15 +636,15 @@ y_sec_axis_entry.pack()
 
 # Erstellen eines Frames für die Plot- und Reset-Buttons
 plot_reset_frame = tk.Frame(root)
-plot_reset_frame.pack()
+plot_reset_frame.pack(pady=10)
 
 # Erstellen des Plot Data Buttons im neuen Frame
 plot_button = tk.Button(plot_reset_frame, text="Plot Data", command=plot_data, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
-plot_button.pack(side=tk.LEFT)
+plot_button.pack(side=tk.LEFT, padx=5)
 
 # Erstellen des Reset-Buttons im neuen Frame
 reset_button = tk.Button(plot_reset_frame, text="Reset Settings", command=reset_settings, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
-reset_button.pack(side=tk.LEFT)
+reset_button.pack(side=tk.LEFT, padx=5)
 
 # Erstellen der Menüleiste
 menu_bar = tk.Menu(root)
